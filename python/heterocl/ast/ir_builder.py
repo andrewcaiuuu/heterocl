@@ -336,13 +336,20 @@ class IRBuilder(object):
                 f"{type(op)}'s build visitor is not implemented yet."
             )
 
+
+
     def build_func_op(self, op: ast.FuncOp, ip):
         loc = Location.file(op.loc.filename, op.loc.lineno, 0)
+        print("type of op: " + str(type(op)))
+        print(op.args)
+        print(op.return_tensors)
         # use global insetion point instead
         ip = InsertionPoint(self.module.body)
         input_types = []
         input_typehints = []
         for arg in op.args:
+            # print(arg)
+            # print(type(arg))
             if isinstance(arg, ast.AllocOp):
                 ele_type = hcl_dtype_to_mlir(arg.dtype, signless=True)
                 input_typehints.append(get_extra_type_hints(arg.dtype))
@@ -356,6 +363,7 @@ class IRBuilder(object):
         output_types = []
         output_typehints = []
         for ret in op.return_tensors:
+            # print(type(ret))
             if isinstance(ret, ast.AllocOp):
                 ele_type = hcl_dtype_to_mlir(ret.dtype, signless=True)
                 output_typehints.append(get_extra_type_hints(ret.dtype))
@@ -382,9 +390,15 @@ class IRBuilder(object):
         # build body
         ip = InsertionPoint(func_op.entry_block)
         for body_op in op.body:
+            print("type of body_op: " + str(type(body_op)))
+            print(body_op)
             self.build_visitor(body_op, ip)
+            #self.build_func_op(body_op, ip)
         for ret in op.return_tensors:
+            print("type of ret: " + str(type(ret)))
+            print(ret) 
             self.build_visitor(ret, ip)
+            #self.build_func_op(ret, ip)
         returns = [ret.result for ret in op.return_tensors]
         func_d.ReturnOp(returns, ip=ip, loc=loc)
         func_op.attributes["function_type"] = TypeAttr.get(func_type)
@@ -1173,9 +1187,27 @@ class IRBuilder(object):
             loops.append(loop)
             body_ip = InsertionPoint(loop.body.operations[0])
 
-        # build body op
-        for body_op in op.body:
-            self.build_visitor(body_op, body_ip)
+        # load from the input tensor
+        self.build_visitor(op.expr, body_ip)
+        # load from scalar
+        load_scalar = ast.LoadOp(op.scalar, (zero_idx,), op.loc)
+        # build the reduction op
+        if op.reduce_op == "sum":
+            reduce_op = ast.Add(op.expr, load_scalar, op.loc)
+        elif op.reduce_op == "max":
+            reduce_op = ast.Max(op.expr, load_scalar, op.loc)
+        elif op.reduce_op == "min":
+            reduce_op = ast.Min(op.expr, load_scalar, op.loc)
+        elif isinstance(op.reduce_op, ast.BinaryOp):
+            reduce_op = op.reduce_op
+        else:
+            raise HCLValueError(f"Unsupported reduction op {op.reduce_op}")
+
+        casted_reduce_op = ast.CastOp(reduce_op, op.dtype, op.loc)
+        self.build_visitor(casted_reduce_op, body_ip)
+        # store to the scalar
+        store_res = ast.StoreOp(op.scalar, (zero_idx,), casted_reduce_op, op.loc)
+        self.build_visitor(store_res, body_ip)
 
         # load from the scalar
         load_op = ast.LoadOp(op.scalar, (zero_idx,), op.loc)
