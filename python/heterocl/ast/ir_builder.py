@@ -28,8 +28,6 @@ from hcl_mlir.exceptions import *
 """ IRBuilder Assumptions
 - All Python immediate should be converted to ConstantOp
 """
-
-
 def get_op_class(op, typ):
     """Get the class of the given op"""
     if isinstance(op, ast.Add):
@@ -336,17 +334,65 @@ class IRBuilder(object):
                 f"{type(op)}'s build visitor is not implemented yet."
             )
 
-
-
-    def build_func_op(self, op: ast.FuncOp, ip):
+    def build_sub_func_op(self, op: ast.FuncOp, ip):
         loc = Location.file(op.loc.filename, op.loc.lineno, 0)
-        print("type of op: " + str(type(op)))
-        print(op.args)
-        print(op.return_tensors)
         # use global insetion point instead
         ip = InsertionPoint(self.module.body)
         input_types = []
         input_typehints = []
+        print(op.args)
+        print("hi")
+        op_args = op.args
+        for arg in op.args:
+            # print(arg)
+            # print(type(arg))
+            if isinstance(arg, ast.AllocOp):
+                ele_type = hcl_dtype_to_mlir(arg.dtype, signless=True)
+                input_typehints.append(get_extra_type_hints(arg.dtype))
+                memref_type = MemRefType.get(arg.shape, ele_type)
+                input_types.append(memref_type)
+            else:
+                dtype = self.tinf_engine.infer(arg)
+                input_typehints.append(get_extra_type_hints(dtype))
+                dtype = hcl_dtype_to_mlir(dtype, signless=True)
+                input_types.append(dtype)
+        output_types = []
+        output_typehints = []
+        op_return_tensors = op.return_tensors
+        for ret in op.return_tensors:
+            # print(type(ret))
+            if isinstance(ret, ast.AllocOp):
+                ele_type = hcl_dtype_to_mlir(ret.dtype, signless=True)
+                output_typehints.append(get_extra_type_hints(ret.dtype))
+                memref_type = MemRefType.get(ret.shape, ele_type)
+                output_types.append(memref_type)
+            else:
+                dtype = self.tinf_engine.infer(ret)
+                output_typehints.append(get_extra_type_hints(dtype))
+                dtype = hcl_dtype_to_mlir(dtype, signless=True)
+                output_types.append(dtype)
+        func_type = FunctionType.get(input_types, output_types)
+        func_op = func_d.FuncOp(name=op.name, type=func_type, ip=ip, loc=loc)
+        op.ir_op = func_op
+
+        if op.prototype:
+            # function prototype, function visibility is private
+            func_op.attributes["sym_visibility"] = StringAttr.get("private")
+            return
+
+        func_op.add_entry_block()
+        for arg, block_arg in zip(op.args, func_op.entry_block.arguments):
+            arg.result = block_arg
+
+
+    def build_func_op(self, op: ast.FuncOp, ip):
+        loc = Location.file(op.loc.filename, op.loc.lineno, 0)
+        # use global insetion point instead
+        ip = InsertionPoint(self.module.body)
+        input_types = []
+        input_typehints = []
+        print(op.args)
+        print("hi")
         for arg in op.args:
             # print(arg)
             # print(type(arg))
@@ -387,18 +433,14 @@ class IRBuilder(object):
         for arg, block_arg in zip(op.args, func_op.entry_block.arguments):
             arg.result = block_arg
 
-        # build body
+        # build body- build lower level func_ops
         ip = InsertionPoint(func_op.entry_block)
         for body_op in op.body:
-            print("type of body_op: " + str(type(body_op)))
-            print(body_op)
+            print("hi")
+            #self.build_sub_func_op(op, ip)
             self.build_visitor(body_op, ip)
-            #self.build_func_op(body_op, ip)
         for ret in op.return_tensors:
-            print("type of ret: " + str(type(ret)))
-            print(ret) 
             self.build_visitor(ret, ip)
-            #self.build_func_op(ret, ip)
         returns = [ret.result for ret in op.return_tensors]
         func_d.ReturnOp(returns, ip=ip, loc=loc)
         func_op.attributes["function_type"] = TypeAttr.get(func_type)
@@ -541,6 +583,75 @@ class IRBuilder(object):
             )
             scf_d.YieldOp([], ip=InsertionPoint(for_op.body))
         return for_op
+
+    # def build_compute(self, op, ip):
+    #     loc = Location.file(op.loc.filename, op.loc.lineno, 0)
+    #     # NEW STUFF STARTS HERE
+    #     # create body func_op
+    #     ip = InsertionPoint(self.module.body)
+    #     input_types = []
+    #     input_typehints = []
+    #     for arg in op_args:
+    #         if isinstance(arg, ast.AllocOp):
+    #             ele_type = hcl_dtype_to_mlir(arg.dtype, signless=True)
+    #             input_typehints.append(get_extra_type_hints(arg.dtype))
+    #             memref_type = MemRefType.get(arg.shape, ele_type)
+    #             input_types.append(memref_type)
+    #         else:
+    #             dtype = self.tinf_engine.infer(arg)
+    #             input_typehints.append(get_extra_type_hints(dtype))
+    #             dtype = hcl_dtype_to_mlir(dtype, signless=True)
+    #             input_types.append(dtype)
+    #     output_types = []
+    #     output_typehints = []
+    #     for ret in op_return_tensors:
+    #         # print(type(ret))
+    #         if isinstance(ret, ast.AllocOp):
+    #             ele_type = hcl_dtype_to_mlir(ret.dtype, signless=True)
+    #             output_typehints.append(get_extra_type_hints(ret.dtype))
+    #             memref_type = MemRefType.get(ret.shape, ele_type)
+    #             output_types.append(memref_type)
+    #         else:
+    #             dtype = self.tinf_engine.infer(ret)
+    #             output_typehints.append(get_extra_type_hints(dtype))
+    #             dtype = hcl_dtype_to_mlir(dtype, signless=True)
+    #             output_types.append(dtype)         
+    #     func_type = FunctionType.get(input_types, output_types)
+    #     func_op = func_d.FuncOp(name=op.name, type=func_type, ip=ip, loc=loc)
+    #     op.ir_op=func_op
+
+    #     func_op.add_entry_block()
+    #     for arg, block_arg in zip(op_args, func_op.entry_block.arguments):
+    #         arg.result = block_arg
+
+    #     func_op_loc = InsertionPoint(func_op.entry_block)
+    #     # NEW STUFF ENDS HERE
+    #     iv_names = [iv.name for iv in op.iter_vars]
+    #     with get_context(), func_op_loc:
+    #         # build output tensor
+    #         alloc_op = op.tensor
+    #         if alloc_op is not None:
+    #             self.build_visitor(alloc_op, ip)
+    #             op.result = alloc_op.result
+    #             op.ir_op = alloc_op
+
+    #         loops = list()
+    #         for i, (ub, loop_name) in enumerate(zip(op.shape, iv_names)):
+    #             loop = self.build_for_loop(
+    #                 0,
+    #                 ub,
+    #                 step=1,
+    #                 name=loop_name,
+    #                 stage=(op.name if i == 0 else ""),
+    #                 ip=ip,
+    #                 loc=loc,
+    #             )
+    #             loops.append(loop)
+    #             ip = InsertionPoint(loop.body.operations[0])
+    #         for iter_var, loop in zip(op.iter_vars, loops):
+    #             iter_var.parent_loop = loop
+    #         for body_op in op.body:
+    #             self.build_visitor(body_op, ip)
 
     def build_compute(self, op, ip):
         loc = Location.file(op.loc.filename, op.loc.lineno, 0)
