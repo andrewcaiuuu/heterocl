@@ -341,8 +341,6 @@ class IRBuilder(object):
         input_types = []
         input_typehints = []
         print(op.args)
-        print("hi")
-        op_args = op.args
         for arg in op.args:
             # print(arg)
             # print(type(arg))
@@ -358,7 +356,7 @@ class IRBuilder(object):
                 input_types.append(dtype)
         output_types = []
         output_typehints = []
-        op_return_tensors = op.return_tensors
+        print(op.return_tensors)
         for ret in op.return_tensors:
             # print(type(ret))
             if isinstance(ret, ast.AllocOp):
@@ -372,7 +370,7 @@ class IRBuilder(object):
                 dtype = hcl_dtype_to_mlir(dtype, signless=True)
                 output_types.append(dtype)
         func_type = FunctionType.get(input_types, output_types)
-        func_op = func_d.FuncOp(name=op.name, type=func_type, ip=ip, loc=loc)
+        func_op = func_d.FuncOp('sub', type=func_type, ip=ip, loc=loc)
         op.ir_op = func_op
 
         if op.prototype:
@@ -392,7 +390,6 @@ class IRBuilder(object):
         input_types = []
         input_typehints = []
         print(op.args)
-        print("hi")
         for arg in op.args:
             # print(arg)
             # print(type(arg))
@@ -408,6 +405,7 @@ class IRBuilder(object):
                 input_types.append(dtype)
         output_types = []
         output_typehints = []
+        print(op.return_tensors)
         for ret in op.return_tensors:
             # print(type(ret))
             if isinstance(ret, ast.AllocOp):
@@ -437,7 +435,7 @@ class IRBuilder(object):
         ip = InsertionPoint(func_op.entry_block)
         for body_op in op.body:
             print("hi")
-            #self.build_sub_func_op(op, ip)
+            # self.build_sub_func_op(op, InsertionPoint(self.module.body))
             self.build_visitor(body_op, ip)
         for ret in op.return_tensors:
             self.build_visitor(ret, ip)
