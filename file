@@ -1,0 +1,41 @@
+Using mlir as IR
+Done HCL-MLIR initialization
+CALL VISITOR
+<class 'heterocl.ast.ast.FuncOp'>
+SHOULD CALL FUNC OP
+FUNCOP: 
+in func_op body
+this is the body:
+[  tensor_1 = compute((10,), Int(32)) (x) {
+    tensor_1[x] = A[x]
+  }
+]
+CALL OP SHOULD BUILD HERE
+CALL VISITOR
+<class 'heterocl.ast.ast.ComputeOp'>
+SHOULD CALL BUILD COMPUTE
+BUILD COMPUTE
+CALL VISITOR
+<class 'heterocl.ast.ast.AllocOp'>
+SHOULD CALL ALLOC OP
+CALL VISITOR
+<class 'heterocl.ast.ast.StoreOp'>
+CALL VISITOR
+<class 'heterocl.ast.ast.LoadOp'>
+CALL VISITOR
+<class 'heterocl.ast.ast.CastOp'>
+in func_op body return tensors
+CALL VISITOR
+<class 'heterocl.ast.ast.AllocOp'>
+REUSABLE
+module {
+  func.func @top(%arg0: memref<10xi32>) -> memref<10xi32> attributes {itypes = "s", otypes = "s"} {
+    %0 = memref.alloc() {name = "tensor_1"} : memref<10xi32>
+    affine.for %arg1 = 0 to 10 {
+      %1 = affine.load %arg0[%arg1] {from = "A"} : memref<10xi32>
+      affine.store %1, %0[%arg1] {to = "tensor_1"} : memref<10xi32>
+    } {loop_name = "x", op_name = "tensor_1"}
+    return %0 : memref<10xi32>
+  }
+}
+

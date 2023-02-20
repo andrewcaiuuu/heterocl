@@ -223,18 +223,24 @@ class IRBuilder(object):
 
         Build MLIR operation from intermediate layer
         """
+        print("CALL VISITOR")
+        print(type(op))
+
         if hasattr(op, "result") and op.result is not None:
             if op.reusable:
-                # if operation as result and is reusable
+                # if operation has result and is reusable
                 # return without building new operation
+                print("REUSABLE")
                 return
         if isinstance(op, ast.ComputeOp):
+            print("SHOULD CALL BUILD COMPUTE")
             self.build_compute(op, ip)
         elif isinstance(op, ast.IterVar):
             self.build_iter_var(op, ip)
         elif isinstance(op, ast.ReduceOp):
             self.build_reduce(op, ip)
         elif isinstance(op, ast.AllocOp):
+            print("SHOULD CALL ALLOC OP")
             self.build_alloc_op(op, ip)
         elif isinstance(op, ast.Cmp):
             self.build_cmp_op(op, ip)
@@ -286,7 +292,12 @@ class IRBuilder(object):
         elif isinstance(op, ast.StructGetOp):
             self.build_struct_get_op(op, ip)
         elif isinstance(op, ast.FuncOp):
+            print("SHOULD CALL FUNC OP")
             self.build_func_op(op, ip)
+            # import copy
+            # op2 = copy.deepcopy(op)
+            # self.build_sub_func_op(op, ip)
+
         elif isinstance(op, ast.CallOp):
             self.build_call_op(op, ip)
         elif isinstance(op, ast.Neg):
@@ -340,7 +351,7 @@ class IRBuilder(object):
         ip = InsertionPoint(self.module.body)
         input_types = []
         input_typehints = []
-        print(op.args)
+        #print(op.args)
         for arg in op.args:
             # print(arg)
             # print(type(arg))
@@ -356,7 +367,7 @@ class IRBuilder(object):
                 input_types.append(dtype)
         output_types = []
         output_typehints = []
-        print(op.return_tensors)
+        #print(op.return_tensors)
         for ret in op.return_tensors:
             # print(type(ret))
             if isinstance(ret, ast.AllocOp):
@@ -370,57 +381,16 @@ class IRBuilder(object):
                 dtype = hcl_dtype_to_mlir(dtype, signless=True)
                 output_types.append(dtype)
         func_type = FunctionType.get(input_types, output_types)
-        func_op = func_d.FuncOp('sub', type=func_type, ip=ip, loc=loc)
-        op.ir_op = func_op
 
-        if op.prototype:
-            # function prototype, function visibility is private
-            func_op.attributes["sym_visibility"] = StringAttr.get("private")
-            return
-
-        func_op.add_entry_block()
-        for arg, block_arg in zip(op.args, func_op.entry_block.arguments):
-            arg.result = block_arg
+        # self.build_sub_func_op(op, ip)
+        # print(op.name)
+        # func_op = func_d.FuncOp(name=op.name, type=func_type, ip=ip, loc=loc)
+        func_op = func_d.FuncOp(name='sub', type=func_type, ip=ip, loc=loc)
 
 
-    def build_func_op(self, op: ast.FuncOp, ip):
-        loc = Location.file(op.loc.filename, op.loc.lineno, 0)
-        # use global insetion point instead
-        ip = InsertionPoint(self.module.body)
-        input_types = []
-        input_typehints = []
-        print(op.args)
-        for arg in op.args:
-            # print(arg)
-            # print(type(arg))
-            if isinstance(arg, ast.AllocOp):
-                ele_type = hcl_dtype_to_mlir(arg.dtype, signless=True)
-                input_typehints.append(get_extra_type_hints(arg.dtype))
-                memref_type = MemRefType.get(arg.shape, ele_type)
-                input_types.append(memref_type)
-            else:
-                dtype = self.tinf_engine.infer(arg)
-                input_typehints.append(get_extra_type_hints(dtype))
-                dtype = hcl_dtype_to_mlir(dtype, signless=True)
-                input_types.append(dtype)
-        output_types = []
-        output_typehints = []
-        print(op.return_tensors)
-        for ret in op.return_tensors:
-            # print(type(ret))
-            if isinstance(ret, ast.AllocOp):
-                ele_type = hcl_dtype_to_mlir(ret.dtype, signless=True)
-                output_typehints.append(get_extra_type_hints(ret.dtype))
-                memref_type = MemRefType.get(ret.shape, ele_type)
-                output_types.append(memref_type)
-            else:
-                dtype = self.tinf_engine.infer(ret)
-                output_typehints.append(get_extra_type_hints(dtype))
-                dtype = hcl_dtype_to_mlir(dtype, signless=True)
-                output_types.append(dtype)
-        func_type = FunctionType.get(input_types, output_types)
-        func_op = func_d.FuncOp(name=op.name, type=func_type, ip=ip, loc=loc)
-        op.ir_op = func_op
+        print("FUNCOP: ")
+        #print(func_op)
+        # op.ir_op = func_op
 
         if op.prototype:
             # function prototype, function visibility is private
@@ -433,14 +403,116 @@ class IRBuilder(object):
 
         # build body- build lower level func_ops
         ip = InsertionPoint(func_op.entry_block)
+        #print(op.body)
         for body_op in op.body:
-            print("hi")
+            print("in sub func_op build body")
             # self.build_sub_func_op(op, InsertionPoint(self.module.body))
             self.build_visitor(body_op, ip)
         for ret in op.return_tensors:
+            print("in sub func_op body return tensors")
             self.build_visitor(ret, ip)
         returns = [ret.result for ret in op.return_tensors]
         func_d.ReturnOp(returns, ip=ip, loc=loc)
+        func_op.attributes["function_type"] = TypeAttr.get(func_type)
+        # attach type hints
+        otypes = "".join(output_typehints)
+        itypes = "".join(input_typehints)
+        func_op.attributes["otypes"] = StringAttr.get(otypes)
+        func_op.attributes["itypes"] = StringAttr.get(itypes)
+        if self.BIT_OPS:
+            # if function body has bit operations
+            # add bit attribute to let VHLS know
+            # that it should use ap_int type for integers
+            func_op.attributes["bit"] = UnitAttr.get()
+
+        # It is necessary to clear the result of each argument
+        # as the same argument object may be refered in multiple functions
+        # we need to make sure that the result is not reused
+        for arg in op.args:
+            arg.result = None
+
+
+    def build_func_op(self, op: ast.FuncOp, ip):
+        loc = Location.file(op.loc.filename, op.loc.lineno, 0)
+        # use global insetion point instead
+        ip = InsertionPoint(self.module.body)
+        input_types = []
+        input_typehints = []
+        #print(op.args)
+        for arg in op.args:
+            # print(arg)
+            # print(type(arg))
+            if isinstance(arg, ast.AllocOp):
+                ele_type = hcl_dtype_to_mlir(arg.dtype, signless=True)
+                input_typehints.append(get_extra_type_hints(arg.dtype))
+                memref_type = MemRefType.get(arg.shape, ele_type)
+                input_types.append(memref_type)
+            else:
+                dtype = self.tinf_engine.infer(arg)
+                input_typehints.append(get_extra_type_hints(dtype))
+                dtype = hcl_dtype_to_mlir(dtype, signless=True)
+                input_types.append(dtype)
+        output_types = []
+        output_typehints = []
+        #print(op.return_tensors)
+        for ret in op.return_tensors:
+            # print(type(ret))
+            if isinstance(ret, ast.AllocOp):
+                ele_type = hcl_dtype_to_mlir(ret.dtype, signless=True)
+                output_typehints.append(get_extra_type_hints(ret.dtype))
+                memref_type = MemRefType.get(ret.shape, ele_type)
+                output_types.append(memref_type)
+            else:
+                dtype = self.tinf_engine.infer(ret)
+                output_typehints.append(get_extra_type_hints(dtype))
+                dtype = hcl_dtype_to_mlir(dtype, signless=True)
+                output_types.append(dtype)
+        func_type = FunctionType.get(input_types, output_types)
+
+        # self.build_sub_func_op(op, ip)
+        # print(op.name)
+        func_op = func_d.FuncOp(name=op.name, type=func_type, ip=ip, loc=loc)
+
+
+        print("FUNCOP: ")
+        #print(func_op)
+        # op.ir_op = func_op
+
+        if op.prototype:
+            # function prototype, function visibility is private
+            func_op.attributes["sym_visibility"] = StringAttr.get("private")
+            return
+
+        func_op.add_entry_block()
+        for arg, block_arg in zip(op.args, func_op.entry_block.arguments):
+            arg.result = block_arg
+
+        # build body- build lower level func_ops
+        ip = InsertionPoint(func_op.entry_block)
+        #print(op.body)
+
+        for body_op in op.body:
+            print("in func_op body")
+            # lower_func_op = ast.FuncOp('sub', op.args, op.body, op.loc)
+            print("this is the body:")
+            print(op.body)
+            # self.build_sub_func_op(lower_func_op, InsertionPoint(self.module.body))
+            print("CALL OP SHOULD BUILD HERE")
+            #call_op = ast.CallOp('sub', lower_func_op.args, lower_func_op.return_tensors, lower_func_op.loc)
+            self.build_visitor(body_op, ip)
+            #print("actually building top body")
+            #self.build_visitor(body_op, ip)
+        
+
+
+        for ret in op.return_tensors:
+            print("in func_op body return tensors")
+            self.build_visitor(ret, ip)
+        returns = [ret.result for ret in op.return_tensors]
+        func_d.ReturnOp(returns, ip=ip, loc=loc)
+
+
+
         func_op.attributes["function_type"] = TypeAttr.get(func_type)
         # attach type hints
         otypes = "".join(output_typehints)
@@ -652,6 +724,7 @@ class IRBuilder(object):
     #             self.build_visitor(body_op, ip)
 
     def build_compute(self, op, ip):
+        print("BUILD COMPUTE")
         loc = Location.file(op.loc.filename, op.loc.lineno, 0)
         iv_names = [iv.name for iv in op.iter_vars]
         with get_context(), loc:
