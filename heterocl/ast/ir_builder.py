@@ -8,6 +8,7 @@
 # Import MLIR dialects
 # Naming rule: import dialect as dialect_d
 import numpy as np
+
 from hcl_mlir.dialects import (
     func as func_d,
     hcl as hcl_d,
@@ -298,10 +299,6 @@ class IRBuilder:
             self.build_struct_get_op(op, ip)
         elif isinstance(op, ast.FuncOp):
             self.build_func_op(op, ip)
-
-            self.build_func_op(op, ip)
-
-            
         elif isinstance(op, ast.CallOp):
             self.build_call_op(op, ip)
         elif isinstance(op, ast.Neg):
@@ -349,18 +346,12 @@ class IRBuilder:
                 f"{type(op)}'s build visitor is not implemented yet."
             )
 
-
     def build_func_op(self, op: ast.FuncOp, ip):
-        global_ip = ip
-        print("FuncOp", op)
-        print("IP BEFORE", ip)
         loc = Location.file(op.loc.filename, op.loc.lineno, 0)
         # use global insetion point instead
         ip = InsertionPoint(self.module.body)
-        print("IP AFTER", ip)
         input_types = []
         input_typehints = []
-        print("op.args: ", op.args)
         for arg in op.args:
             if isinstance(arg, ast.AllocOp):
                 ele_type = hcl_dtype_to_mlir(arg.dtype, signless=True)
@@ -386,9 +377,6 @@ class IRBuilder:
                 dtype = hcl_dtype_to_mlir(dtype, signless=True)
                 output_types.append(dtype)
         func_type = FunctionType.get(input_types, output_types)
-        print("FUNC_TYPE", func_type)
-        print("INPUT TYPES", input_types)
-        print("OUTPUT TYPES", output_types)
         # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
         func_op = func_d.FuncOp(name=op.name, type=func_type, ip=ip, loc=loc)
         op.ir_op = func_op
@@ -399,29 +387,15 @@ class IRBuilder:
             return
 
         func_op.add_entry_block()
-        print("ENTRY BLOCK ARGUMENTS", func_op.entry_block.arguments)
         for arg, block_arg in zip(op.args, func_op.entry_block.arguments):
             arg.result = block_arg
-            print("arg, block_arg", arg, block_arg)
 
         # build body
         ip = InsertionPoint(func_op.entry_block)
-        i = 0 
-        j = 0
         for body_op in op.body:
-            print("body_op ", i, ": ",  body_op)
-            #__________________FUNC_OP PORTION___________________#
-            if isinstance(body_op, ast.ComputeOp):
-                print("SHOULD CALL BUILD CALL OP")
-                call_op = ast.CallOp("sub", op.args, [], op.loc)
-                # self.build_call_op(call_op, ip=ip)
-            #__________________FUNC_OP PORTION___________________#
             self.build_visitor(body_op, ip)
-            i += 1
         for ret in op.return_tensors:
-            print("return_tensor ", j, ": ",  ret)
             self.build_visitor(ret, ip)
-            j+= 1
         returns = [ret.result for ret in op.return_tensors]
         func_d.ReturnOp(returns, ip=ip, loc=loc)
         func_op.attributes["function_type"] = TypeAttr.get(func_type)
@@ -443,7 +417,6 @@ class IRBuilder:
             arg.result = None
 
     def build_call_op(self, op: ast.CallOp, ip):
-        print("CALLING BUILD_CALL_OP")
         loc = Location.file(op.loc.filename, op.loc.lineno, 0)
         func = FlatSymbolRefAttr.get(op.name)
         # build arguments
@@ -565,11 +538,9 @@ class IRBuilder:
     def build_compute(self, op, ip):
         loc = Location.file(op.loc.filename, op.loc.lineno, 0)
         iv_names = [iv.name for iv in op.iter_vars]
-        print("ComputeOp", op)
         with get_context(), loc:
             # build output tensor
             alloc_op = op.tensor
-            print("Compute op tensor", alloc_op)
             if alloc_op is not None:
                 self.build_visitor(alloc_op, ip)
                 op.result = alloc_op.result
@@ -592,7 +563,6 @@ class IRBuilder:
                 iter_var.parent_loop = loop
             for body_op in op.body:
                 self.build_visitor(body_op, ip)
-
 
     def build_for_op(self, op: ast.ForOp, ip):
         loc = Location.file(op.loc.filename, op.loc.lineno, 0)
