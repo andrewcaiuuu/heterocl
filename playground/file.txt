@@ -1,0 +1,36 @@
+SUBFUNCS:  [  func sub_func0(['A']) {
+    tensor_1 = compute((10,), Int(32)) (x) {
+      tensor_1[x] = A[x]
+    }
+
+    return []
+  }
+]
+SCHEDULE MODULE module {
+  func.func @top(%arg0: memref<10xi32>) -> memref<10xi32> attributes {itypes = "s", otypes = "s"} {
+    %0 = memref.alloc() {name = "tensor_1"} : memref<10xi32>
+    affine.for %arg1 = 0 to 10 {
+      %1 = affine.load %arg0[%arg1] {from = "A"} : memref<10xi32>
+      affine.store %1, %0[%arg1] {to = "tensor_1"} : memref<10xi32>
+    } {loop_name = "x", op_name = "tensor_1"}
+    return %0 : memref<10xi32>
+  }
+  func.func @sub_func0(%arg0: memref<10xi32>) attributes {itypes = "s", otypes = ""} {
+    return
+  }
+}
+
+module {
+  func.func @top(%arg0: memref<10xi32>) -> memref<10xi32> attributes {itypes = "s", otypes = "s"} {
+    %0 = memref.alloc() {name = "tensor_1"} : memref<10xi32>
+    affine.for %arg1 = 0 to 10 {
+      %1 = affine.load %arg0[%arg1] {from = "A"} : memref<10xi32>
+      affine.store %1, %0[%arg1] {to = "tensor_1"} : memref<10xi32>
+    } {loop_name = "x", op_name = "tensor_1"}
+    return %0 : memref<10xi32>
+  }
+  func.func @sub_func0(%arg0: memref<10xi32>) attributes {itypes = "s", otypes = ""} {
+    return
+  }
+}
+

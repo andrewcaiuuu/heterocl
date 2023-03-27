@@ -63,7 +63,7 @@ def lower(
     ast_pm.add_pass(ExpandFunc)
     device_agnostic_ast = ast_pm.run(schedule.ast)
     schedule._ast = device_agnostic_ast
-
+    # print("SCHEDULE AST: ", schedule._ast)
     # Build MLIR IR
     set_context()
     agnostic_ir_builder = IRBuilder(device_agnostic_ast)
@@ -74,6 +74,7 @@ def lower(
     exit_context()
 
     schedule.set_lowered()
+    print("SCHEDULE MODULE", schedule.module)
     return schedule.module
 
 

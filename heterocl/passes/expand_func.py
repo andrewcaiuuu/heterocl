@@ -6,34 +6,33 @@ class ExpandFunc(Pass):
     """ Convert all funcop into nested funcop """
     def __init__(self):
         super().__init__("expand_func")
+        self._ast = None
+        self.subfuncs = []
 
     def visit(self, op):
-        print("hi")
-        if isinstance(op, ast.FuncOp):
-            print("THIS IS A FUNCOP: ", op)
-            self.expand_func(op)
-        if isinstance(op, ast.StoreOp):
-            print(op)
-            if op.value is not None:
-                self.visit(op.value)
-            if hasattr(op, "body") and op.body is not None:
-                for body_op in op.body:
-                    self.visit(body_op)
+        if isinstance(op, ast.FuncOp) and op.name == "top":
+            if (op.name == "top"):
                 self.expand_func(op)
+                print("SUBFUNCS: ", self.subfuncs)
+                
     
     def apply(self, _ast):
         """Pass entry point"""
+        self._ast = _ast
         for op in _ast.region:
             self.visit(op)
-
         return _ast
 
     def expand_func(self, scope):
-        print("FUNCOP BODY: ", scope.body)
-        computeops = list()
+        i = 0
         for op in scope.body:
             if isinstance(op, ast.ComputeOp):
-                computeops.append([op])
+                lower_func_op = ast.FuncOp("sub_func" + str(i), op.input_tensors, [op], op.loc)
+                lower_func_op.level = 1
+                self.update_level(lower_func_op)
+                self._ast.region.insert(1, lower_func_op)
+                self.subfuncs.append(lower_func_op)
+                i += 1
         return
 
         

@@ -12,16 +12,20 @@ class PromoteFunc(Pass):
     """
 
     def __init__(self):
+        #print("SHOULD CALL PROMOTE CONSTRUCTOR")
         super().__init__("promote_func")
         self._ast = None
 
     def apply(self, _ast):
+        #print("SHOULD CALL PROMOTE APPLY")
         """Pass entry point"""
         self._ast = _ast
+        #print("_AST: ", _ast)
         self.visit(_ast.region)
         return _ast
 
     def visit(self, region):
+        #print("SHOULD CALL PROMOTE VISIT")
         for op in region:
             if isinstance(op, ast.FuncOp):
                 self.promote_func(op, region)
@@ -29,6 +33,7 @@ class PromoteFunc(Pass):
                 self.visit(op.body)
 
     def promote_func(self, op, region):
+        #print("SHOULD CALL PROMOTE PROMOTE_FUNC")
         if op in self._ast.region:
             # already promoted
             return
