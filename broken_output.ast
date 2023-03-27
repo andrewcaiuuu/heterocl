@@ -1,0 +1,21 @@
+#map0 = affine_map<(d0) -> (d0)>
+#map1 = affine_map<() -> (0)>
+#map2 = affine_map<() -> (10)>
+"builtin.module"() ({
+  "func.func"() ({
+  ^bb0(%arg0: memref<10xi32>):
+    "func.call"(%arg0) {callee = @sub_func0} : (memref<10xi32>) -> ()
+    %0 = "memref.alloc"() {name = "tensor_1", operand_segment_sizes = dense<0> : vector<2xi32>} : () -> memref<10xi32>
+    "func.return"(%0) : (memref<10xi32>) -> ()
+  }) {function_type = (memref<10xi32>) -> memref<10xi32>, itypes = "s", otypes = "s", sym_name = "top"} : () -> ()
+  "func.func"() ({
+  ^bb0(%arg0: memref<10xi32>):
+    "affine.for"() ({
+    ^bb0(%arg1: index):
+      %0 = "affine.load"(%arg0, %arg1) {from = "A", map = #map0} : (memref<10xi32>, index) -> i32
+      "affine.store"(%0, %0, %arg1) {map = #map0, to = "tensor_1"} : (i32, memref<10xi32>, index) -> ()
+      "affine.yield"() : () -> ()
+    }) {loop_name = "x", lower_bound = #map1, op_name = "tensor_1", step = 1 : i32, upper_bound = #map2} : () -> ()
+    "func.return"() : () -> ()
+  }) {function_type = (memref<10xi32>) -> (), itypes = "s", otypes = "", sym_name = "sub_func0"} : () -> ()
+}) : () -> ()

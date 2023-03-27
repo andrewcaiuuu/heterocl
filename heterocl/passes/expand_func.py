@@ -14,6 +14,10 @@ class ExpandFunc(Pass):
             if (op.name == "top"):
                 self.expand_func(op)
                 print("SUBFUNCS: ", self.subfuncs)
+                op.body = []
+                for subfunc in self.subfuncs:
+                    call_op = ast.CallOp(subfunc.name, subfunc.args, subfunc.return_tensors, subfunc.loc)
+                    op.body.append(call_op)
                 
     
     def apply(self, _ast):
