@@ -24,6 +24,7 @@ from .type_rules import (
     pow_rule,
     shift_rule,
     select_rule,
+    intrin_rule,
 )
 from ..types import Int, UInt, Index, Float, Struct, dtype_to_str
 
@@ -68,7 +69,17 @@ def replace_all_uses_with(op, old_tensor, new_tensor):
             replace_all_uses_with(value, old_tensor, new_tensor)
 
 
+# Unwrap sympy integer or float into python integer or float
+def unwrap_sp(expr):
+    if isinstance(expr, sp.core.numbers.Integer):
+        return int(expr)
+    if isinstance(expr, sp.core.numbers.Float):
+        return float(expr)
+    return expr
+
+
 def simplify(expr):
+    # pylint: disable=too-many-return-statements, too-many-branches
     """
     simplifies an expression by replacing all constants with their values
     and compute the result if possible
@@ -76,6 +87,8 @@ def simplify(expr):
     """
     if isinstance(expr, (int, float)):
         return expr
+    if isinstance(expr, sp.core.numbers.Integer):
+        return int(expr)
     if isinstance(expr, ConstantOp):
         return expr.value
     if isinstance(expr, IterVar):
@@ -98,7 +111,70 @@ def simplify(expr):
             return expr
         index = expr.index
         return sp.simplify(simplify(tensor.fcompute(*index)))
-    raise HCLError(f"Unsupported expression type: {type(expr)}")
+    if isinstance(expr, LeftShiftOp):
+        lhs = unwrap_sp(simplify(expr.lhs))
+        rhs = unwrap_sp(simplify(expr.rhs))
+        return sp.simplify(lhs << rhs)
+    if isinstance(expr, RightShiftOp):
+        lhs = unwrap_sp(simplify(expr.lhs))
+        rhs = unwrap_sp(simplify(expr.rhs))
+        return sp.simplify(lhs >> rhs)
+    if isinstance(expr, And):
+        lhs = unwrap_sp(simplify(expr.lhs))
+        rhs = unwrap_sp(simplify(expr.rhs))
+        return sp.simplify(lhs & rhs)
+    if isinstance(expr, Or):
+        lhs = unwrap_sp(simplify(expr.lhs))
+        rhs = unwrap_sp(simplify(expr.rhs))
+        return sp.simplify(lhs | rhs)
+    if isinstance(expr, XOr):
+        lhs = unwrap_sp(simplify(expr.lhs))
+        rhs = unwrap_sp(simplify(expr.rhs))
+        return sp.simplify(lhs ^ rhs)
+    if isinstance(expr, CastOp):
+        return simplify(expr.expr)
+    if isinstance(expr, LogicalAnd):
+        lhs = unwrap_sp(simplify(expr.lhs))
+        rhs = unwrap_sp(simplify(expr.rhs))
+        return sp.simplify(lhs and rhs)
+    if isinstance(expr, LogicalOr):
+        lhs = unwrap_sp(simplify(expr.lhs))
+        rhs = unwrap_sp(simplify(expr.rhs))
+        return sp.simplify(lhs or rhs)
+    if isinstance(expr, Cmp):
+        lhs = unwrap_sp(simplify(expr.lhs))
+        rhs = unwrap_sp(simplify(expr.rhs))
+        op = expr.name
+        if op == "lt":
+            output = lhs < rhs
+        elif op == "le":
+            output = lhs <= rhs
+        elif op == "eq":
+            output = lhs == rhs
+        elif op == "ne":
+            output = lhs != rhs
+        elif op == "gt":
+            output = lhs > rhs
+        elif op == "ge":
+            output = lhs >= rhs
+        else:
+            raise HCLError(f"Unsupported expression type: {type(expr)}, {expr.name}")
+        if output:
+            return sp.simplify(1)
+        return sp.simplify(0)
+    if isinstance(expr, Neg):
+        return sp.simplify(-unwrap_sp(simplify(expr.expr)))
+    if isinstance(expr, StructGetOp):
+        struct = expr.struct
+        index = struct.index
+        e = struct.tensor.fcompute(*index)[expr.field]
+        return sp.simplify(simplify(e))
+    if isinstance(expr, SelectOp):  # pylint: disable=no-else-return
+        if simplify(expr.cond):
+            return sp.simplify(simplify(expr.true_value))
+        return sp.simplify(simplify(expr.false_value))
+    else:
+        raise HCLError(f"Unsupported expression type: {type(expr)}")
 
 
 class Location:
@@ -633,6 +709,7 @@ class BitCastOp(UnaryOp):
         self.dtype = dtype
 
 
+@register_type_rules(intrin_rule)
 class MathExpOp(UnaryOp):
     """Mathematical exponential operation."""
 
@@ -650,6 +727,7 @@ class MathPowOp(BinaryOp):
         self.dtype = self.tinf_engine.infer(self)
 
 
+@register_type_rules(intrin_rule)
 class MathLogOp(UnaryOp):
     """Mathematical log operation."""
 
@@ -658,6 +736,7 @@ class MathLogOp(UnaryOp):
         self.dtype = self.tinf_engine.infer(self)
 
 
+@register_type_rules(intrin_rule)
 class MathLog2Op(UnaryOp):
     """Mathematical log2 operation."""
 
@@ -666,6 +745,7 @@ class MathLog2Op(UnaryOp):
         self.dtype = self.tinf_engine.infer(self)
 
 
+@register_type_rules(intrin_rule)
 class MathLog10Op(UnaryOp):
     """Mathematical log10 operation."""
 
@@ -674,6 +754,7 @@ class MathLog10Op(UnaryOp):
         self.dtype = self.tinf_engine.infer(self)
 
 
+@register_type_rules(intrin_rule)
 class MathSqrtOp(UnaryOp):
     """Mathematical square root operation."""
 
@@ -682,6 +763,7 @@ class MathSqrtOp(UnaryOp):
         self.dtype = self.tinf_engine.infer(self)
 
 
+@register_type_rules(intrin_rule)
 class MathSinOp(UnaryOp):
     """Mathematical sine operation."""
 
@@ -690,6 +772,7 @@ class MathSinOp(UnaryOp):
         self.dtype = self.tinf_engine.infer(self)
 
 
+@register_type_rules(intrin_rule)
 class MathCosOp(UnaryOp):
     """Mathematical cosine operation."""
 
@@ -698,8 +781,18 @@ class MathCosOp(UnaryOp):
         self.dtype = self.tinf_engine.infer(self)
 
 
-class MathTanhOp(UnaryOp):
+@register_type_rules(intrin_rule)
+class MathTanOp(UnaryOp):
     """Mathematical tangent operation."""
+
+    def __init__(self, expr, loc):
+        super().__init__("tan", expr, loc)
+        self.dtype = self.tinf_engine.infer(self)
+
+
+@register_type_rules(intrin_rule)
+class MathTanhOp(UnaryOp):
+    """Mathematical hyperbolic tangent operation."""
 
     def __init__(self, expr, loc):
         super().__init__("tanh", expr, loc)
@@ -1751,10 +1844,26 @@ class TypeInference:
             return self.infer(expr.rets[0])
         if isinstance(expr, Neg):
             return self.infer(expr.expr)
-        if isinstance(expr, MathTanhOp):
-            return Float(64)
+        # math ops
+        if isinstance(
+            expr,
+            (
+                MathExpOp,
+                MathPowOp,
+                MathLogOp,
+                MathLog2Op,
+                MathLog10Op,
+                MathSqrtOp,
+                MathSinOp,
+                MathCosOp,
+                MathTanOp,
+                MathTanhOp,
+            ),
+        ):
+            return self.infer_math(expr)
+
         raise APIError(
-            f"Type inference not defined for expression of type: {type(expr)}"
+            f"Type inference method not defined for expression of type: {type(expr)} in TypeInference.infer"
         )
 
     def infer_binary(self, expr):
@@ -1772,6 +1881,15 @@ class TypeInference:
             if res_type.bits > 128:
                 DTypeWarning("Modulo only supports integer <= 128 bits").warn()
                 res_type = Int(128) if isinstance(res_type, Int) else UInt(128)
+        return res_type
+
+    def infer_math(self, expr):
+        input_type = self.infer(expr.expr)
+        if isinstance(input_type, tuple):
+            input_type = input_type[-1]
+        # find the rule set based on the operation type
+        type_rule = get_type_rules(type(expr))
+        res_type = type_rule(input_type)
         return res_type
 
     def infer_select(self, expr):
