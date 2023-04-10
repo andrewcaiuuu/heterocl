@@ -562,6 +562,8 @@ class IRBuilder:
             for iter_var, loop in zip(op.iter_vars, loops):
                 iter_var.parent_loop = loop
             for body_op in op.body:
+                if isinstance(body_op, ast.StoreOp):
+                    print("IR BUILDER GOT STORE OP: ", body_op)
                 self.build_visitor(body_op, ip)
 
     def build_for_op(self, op: ast.ForOp, ip):

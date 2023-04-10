@@ -19,3 +19,12 @@
     "func.return"() : () -> ()
   }) {function_type = (memref<10xi32>) -> (), itypes = "s", otypes = "", sym_name = "sub_func0"} : () -> ()
 }) : () -> ()
+
+
+change:
+"affine.store"(%0, %0, %arg1) {map = #map0, to = "tensor_1"} : (i32, memref<10xi32>, index) -> ()
+
+to:
+"affine.store"(%0, %arg0, %arg1) {map = #map0, to = "A"} : (i32, memref<10xi32>, index) -> ()
+
+IR LEVEL GOT STORE OP:        tensor_1[x] = A[x]
