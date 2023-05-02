@@ -32,7 +32,7 @@ class ExpandFunc(Pass):
         for op in scope.body:
             # print("EXPAND_FUNC GOT OP: ", op)
             if isinstance(op, ast.ComputeOp):
-                lower_func_op = ast.FuncOp("sub_func{str(i)}", op.input_tensors, [op], op.loc)
+                lower_func_op = ast.FuncOp(f"sub_func{i}", op.input_tensors, [op], op.loc)
                 lower_func_op.level = 1
                 self.update_level(lower_func_op)
                 self._ast.region.insert(1, lower_func_op)
