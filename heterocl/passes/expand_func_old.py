@@ -11,13 +11,14 @@ class ExpandFunc(Pass):
 
     def visit(self, op):
         if isinstance(op, ast.FuncOp) and op.name == "top":
-            self.expand_func(op)
-            # print("SUBFUNCS: ", self.subfuncs)
-            # print("ORIGINAL BODY: ", op.body)
-            op.body = []
-            for subfunc in self.subfuncs:
-                call_op = ast.CallOp(subfunc.name, subfunc.args, subfunc.return_tensors, subfunc.loc)
-                op.body.append(call_op)
+            if (op.name == "top"):
+                self.expand_func(op)
+                print("SUBFUNCS: ", self.subfuncs)
+                print("ORIGINAL BODY: ", op.body)
+                op.body = []
+                for subfunc in self.subfuncs:
+                    call_op = ast.CallOp(subfunc.name, subfunc.args, subfunc.return_tensors, subfunc.loc)
+                    op.body.append(call_op)
                 
     
     def apply(self, _ast):
@@ -30,14 +31,16 @@ class ExpandFunc(Pass):
     def expand_func(self, scope):
         i = 0
         for op in scope.body:
-            # print("EXPAND_FUNC GOT OP: ", op)
+            print("EXPAND_FUNC GOT OP: ", op)
             if isinstance(op, ast.ComputeOp):
-                lower_func_op = ast.FuncOp("sub_func{str(i)}", op.input_tensors, [op], op.loc)
+                lower_func_op = ast.FuncOp("sub_func" + str(i), op.input_tensors, [op], op.loc)
                 lower_func_op.level = 1
                 self.update_level(lower_func_op)
                 self._ast.region.insert(1, lower_func_op)
                 self.subfuncs.append(lower_func_op)
                 i += 1
+            if isinstance(op, ast.StoreOp): 
+                print("STORE OP: ", op)
         return
 
         
